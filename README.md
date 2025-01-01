@@ -20,6 +20,102 @@ secret.yml for securely storing JWT_SECRET.
 3. CI/CD Pipeline
 AWS CodePipeline and CodeBuild are used to automate the build, test, and deployment of the application.
 The application is tested using unit tests before deployment.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template to deploy Flask app on AWS EKS'
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: 'VPC ID for the Kubernetes cluster'
+  SubnetIds:
+    Type: CommaDelimitedList
+    Description: 'Comma separated list of subnet IDs'
+  SecurityGroupId:
+    Type: String
+    Description: 'Security group ID for the EKS worker nodes'
+
+Resources:
+  # Create an EKS Cluster
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: flask-app-cluster
+      RoleArn: arn:aws:iam::249521066518:role/AWSServiceRoleForAmazonEKS
+      ResourcesVpcConfig:
+        SubnetIds: 
+          Ref: SubnetIds
+        SecurityGroupIds:
+          - Ref: SecurityGroupId
+
+  # Create the EKS node group for the cluster
+  NodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName:
+        Ref: EKSCluster
+      NodeRole: arn:aws:iam::249521066518:role/AWSServiceRoleForAmazonEKSNodegroup
+      Subnets:
+        Ref: SubnetIds
+      InstanceTypes:
+        - m5.large
+      ScalingConfig:
+        MinSize: 2
+        MaxSize: 4
+        DesiredSize: 2
+
+  # Create a load balancer for the service
+  FlaskAppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: flask-app-lb
+      Subnets: 
+        Ref: SubnetIds
+      SecurityGroups: 
+        - Ref: SecurityGroupId
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Type: application
+
+  # Create a target group for the load balancer
+  FlaskAppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8080
+      Protocol: HTTP
+      VpcId: vpc-04bcb8e487116a765
+        Ref: VpcId
+      TargetType: ip
+
+  # Create listener for the load balancer
+  FlaskAppListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 200
+            MessageBody: 'Flask app is running'
+            ContentType: 'text/plain'
+      LoadBalancerArn:
+        Ref: FlaskAppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  EKSClusterName:
+    Description: 'EKS Cluster Name'
+    Value: 
+      Ref: EKSCluster
+
+  LoadBalancerDNS:
+    Description: 'DNS of the Load Balancer'
+    Value:
+      Fn::GetAtt:
+        - FlaskAppLoadBalancer
+        - DNSName
 4. External URL (ELB)
 The application is accessible via an Elastic Load Balancer (ELB), which was created automatically as part of the Kubernetes service setup.
 
